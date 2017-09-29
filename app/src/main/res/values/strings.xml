@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">LightControl</string>
+    <string name="settings">Settings</string>
+    <string name="exit">Exit</string>
 </resources>

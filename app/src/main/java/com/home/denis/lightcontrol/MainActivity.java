@@ -23,11 +23,11 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 public class MainActivity extends AppCompatActivity {
 
     SharedPreferences sp;
-    TextView tvInfo;
+    TextView tvStatus;
 
     MqttAndroidClient mqttAndroidClient;
-    final String serverUri = "tcp://192.168.1.108:1883";
-    String clientId = "LightControlAndroidClient";
+    String mqtt_serverUri = "tcp://192.168.1.108:1883";
+    String mqtt_clientId = "LightControlAndroidClient";
     final String publishTopic = "wemos/toggle";
     final String publishMessage = "Hello World!";
     final String subscriptionTopic = "wemos/test";
@@ -37,31 +37,43 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        tvInfo = (TextView) findViewById(R.id.textView);
+        tvStatus = (TextView) findViewById(R.id.tvStatus);
 
         // получаем SharedPreferences, которое работает с файлом настроек
         sp = PreferenceManager.getDefaultSharedPreferences(this);
         // полная очистка настроек
         // sp.edit().clear().commit();
 
-        clientId = clientId + System.currentTimeMillis();
-        mqttAndroidClient = new MqttAndroidClient(getApplicationContext(), serverUri, clientId);
+    }
+
+    private void Connect2MQTT() {
+        mqtt_serverUri = sp.getString(PrefActivity.KEY_PREF_SERVER_URI, mqtt_serverUri);
+        mqtt_clientId = mqtt_clientId + System.currentTimeMillis();
+        if (null != mqttAndroidClient)
+        {
+            try {
+                mqttAndroidClient.disconnect();
+            } catch (MqttException ex){
+                ex.printStackTrace();
+            }
+        }
+        mqttAndroidClient = new MqttAndroidClient(getApplicationContext(), mqtt_serverUri, mqtt_clientId);
         mqttAndroidClient.setCallback(new MqttCallbackExtended() {
             @Override
             public void connectComplete(boolean reconnect, String serverURI) {
 
                 if (reconnect) {
-                    addToHistory("Reconnected to : " + serverURI);
+                    updateStatus("Reconnected to : " + serverURI);
                     // Because Clean Session is true, we need to re-subscribe
                     subscribeToTopic();
                 } else {
-                    addToHistory("Connected to: " + serverURI);
+                    updateStatus("Connected to: " + serverURI);
                 }
             }
 
             @Override
             public void connectionLost(Throwable cause) {
-                addToHistory("The Connection was lost.");
+                updateStatus("The Connection to "+ mqttAndroidClient.getServerURI() +" was lost.");
             }
 
             @Override
@@ -79,7 +91,7 @@ public class MainActivity extends AppCompatActivity {
         mqttConnectOptions.setAutomaticReconnect(true);
         mqttConnectOptions.setCleanSession(false);
         try {
-            addToHistory("Connecting to " + serverUri);
+            updateStatus("Connecting to " + mqtt_serverUri);
             mqttAndroidClient.connect(mqttConnectOptions, null, new IMqttActionListener() {
                 @Override
                 public void onSuccess(IMqttToken asyncActionToken) {
@@ -94,7 +106,7 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
-                    addToHistory("Failed to connect to: " + serverUri);
+                    updateStatus("Failed to connect to: " + mqtt_serverUri);
                 }
             });
 
@@ -107,6 +119,12 @@ public class MainActivity extends AppCompatActivity {
     private void addToHistory(String mainText){
         System.out.println("LOG: " + mainText);
     }
+
+    private void updateStatus(String mainText){
+        addToHistory(mainText);
+        tvStatus.setText(mainText);
+    }
+
     public void subscribeToTopic(){
         try {
             mqttAndroidClient.subscribe(subscriptionTopic, 0, null, new IMqttActionListener() {
@@ -126,7 +144,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void messageArrived(String topic, MqttMessage message) throws Exception {
                     // message Arrived!
-                    System.out.println("Message: " + topic + " : " + new String(message.getPayload()));
+                    addToHistory("Message: " + topic + " : " + new String(message.getPayload()));
                 }
             });
 
@@ -147,7 +165,7 @@ public class MainActivity extends AppCompatActivity {
                 addToHistory(mqttAndroidClient.getBufferedMessageCount() + " messages in buffer.");
             }
         } catch (MqttException e) {
-            System.err.println("Error Publishing: " + e.getMessage());
+            addToHistory("Error Publishing: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -160,8 +178,6 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        TextView tv = (TextView) findViewById(R.id.textView);
-        tv.setText(item.getTitle());
         switch (item.getItemId()) {
             case R.id.menu_settings:
                 Intent intent = new Intent(this, PrefActivity.class);
@@ -179,11 +195,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onResume() {
-        Boolean notif = sp.getBoolean("notif", false);
-        String address = sp.getString("address", "");
-        String text = "Notifications are "
-                + ((notif) ? "enabled, address = " + address : "disabled");
-        tvInfo.setText(text);
+        Connect2MQTT();
         super.onResume();
     }
 

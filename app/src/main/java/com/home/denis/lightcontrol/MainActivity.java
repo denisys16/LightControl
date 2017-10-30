@@ -1,7 +1,12 @@
 package com.home.denis.lightcontrol;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.preference.PreferenceManager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -16,18 +21,21 @@ import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
 import org.eclipse.paho.client.mqttv3.IMqttToken;
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
+import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
 public class MainActivity extends AppCompatActivity {
 
-    SharedPreferences sp;
+    SharedPreferences sharedPreferences;
     TextView tvStatus;
 
+    // The BroadcastReceiver that tracks network connectivity changes.
+    private NetworkReceiver receiver = new NetworkReceiver();
+
     MqttAndroidClient mqttAndroidClient;
-    String mqtt_serverUri = "tcp://192.168.1.108:1883";
-    String mqtt_clientId = "LightControlAndroidClient";
+    MqttConnectOptions mqttConnectOptions;
     final String publishTopic = "wemos/toggle";
     final String publishMessage = "Hello World!";
     final String subscriptionTopic = "wemos/test";
@@ -40,24 +48,40 @@ public class MainActivity extends AppCompatActivity {
         tvStatus = (TextView) findViewById(R.id.tvStatus);
 
         // получаем SharedPreferences, которое работает с файлом настроек
-        sp = PreferenceManager.getDefaultSharedPreferences(this);
+        sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         // полная очистка настроек
         // sp.edit().clear().commit();
 
+        mqttConnectOptions = new MqttConnectOptions();
+        mqttConnectOptions.setAutomaticReconnect(false);
+        // if client disconnects, server remembers client (and does not clean up)
+        mqttConnectOptions.setCleanSession(false);
+        mqttConnectOptions.setConnectionTimeout(300);
+        mqttConnectOptions.setKeepAliveInterval(10 * 60);
+
+        // Registers BroadcastReceiver to track network connection changes.
+        IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
+        receiver = new NetworkReceiver();
+        this.registerReceiver(receiver, filter);
     }
 
-    private void Connect2MQTT() {
-        mqtt_serverUri = sp.getString(PrefActivity.KEY_PREF_SERVER_URI, mqtt_serverUri);
-        mqtt_clientId = mqtt_clientId + System.currentTimeMillis();
-        if (null != mqttAndroidClient)
-        {
-            try {
-                mqttAndroidClient.disconnect();
-            } catch (MqttException ex){
-                ex.printStackTrace();
-            }
-        }
-        mqttAndroidClient = new MqttAndroidClient(getApplicationContext(), mqtt_serverUri, mqtt_clientId);
+    private String getPrefServerURI()
+    {
+        return  sharedPreferences.getString(PrefActivity.KEY_PREF_SERVER_URI, "tcp://192.168.1.108:1883");
+    }
+
+    private boolean isNetworkConnected()
+    {
+        ConnectivityManager cm = (ConnectivityManager)this.getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+        boolean isConnected = activeNetwork != null && activeNetwork.isConnectedOrConnecting();
+
+        return isConnected;
+    }
+
+    private void InitMQTTClient() {
+        mqttAndroidClient = new MqttAndroidClient(getApplicationContext(), getPrefServerURI(), MqttClient.generateClientId());
         mqttAndroidClient.setCallback(new MqttCallbackExtended() {
             @Override
             public void connectComplete(boolean reconnect, String serverURI) {
@@ -86,13 +110,24 @@ public class MainActivity extends AppCompatActivity {
 
             }
         });
+    }
 
-        MqttConnectOptions mqttConnectOptions = new MqttConnectOptions();
-        mqttConnectOptions.setAutomaticReconnect(true);
-        mqttConnectOptions.setCleanSession(false);
+    private void Connect2MQTT() {
+
+        if (mqttAndroidClient != null) {
+            if (mqttAndroidClient.isConnected())
+                mqttAndroidClient.close();
+        }
+        if (!isNetworkConnected()) {
+            updateStatus("No network connection available.");
+            return;
+        }
+
+        InitMQTTClient();
+        updateStatus("Connecting to " + getPrefServerURI());
         try {
-            updateStatus("Connecting to " + mqtt_serverUri);
-            mqttAndroidClient.connect(mqttConnectOptions, null, new IMqttActionListener() {
+
+            IMqttToken t = mqttAndroidClient.connect(mqttConnectOptions, null, new IMqttActionListener() {
                 @Override
                 public void onSuccess(IMqttToken asyncActionToken) {
                     DisconnectedBufferOptions disconnectedBufferOptions = new DisconnectedBufferOptions();
@@ -106,14 +141,16 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
-                    updateStatus("Failed to connect to: " + mqtt_serverUri);
+                    updateStatus("Failed to connect to: " + mqttAndroidClient.getServerURI());
                 }
             });
-
+            //t.waitForCompletion(5000);
 
         } catch (MqttException ex){
             ex.printStackTrace();
         }
+
+
     }
 
     private void addToHistory(String mainText){
@@ -126,6 +163,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void subscribeToTopic(){
+        if (mqttAndroidClient == null)
+            return;
+        if (!mqttAndroidClient.isConnected())
+            return;
         try {
             mqttAndroidClient.subscribe(subscriptionTopic, 0, null, new IMqttActionListener() {
                 @Override
@@ -138,7 +179,7 @@ public class MainActivity extends AppCompatActivity {
                     addToHistory("Failed to subscribe");
                 }
             });
-
+            /*
             // THIS DOES NOT WORK!
             mqttAndroidClient.subscribe(subscriptionTopic, 0, new IMqttMessageListener() {
                 @Override
@@ -147,6 +188,7 @@ public class MainActivity extends AppCompatActivity {
                     addToHistory("Message: " + topic + " : " + new String(message.getPayload()));
                 }
             });
+            */
 
         } catch (MqttException ex){
             System.err.println("Exception whilst subscribing");
@@ -155,7 +197,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void publishMessage(){
-
+        if (mqttAndroidClient == null)
+            return;
+        if (!mqttAndroidClient.isConnected())
+            return;
         try {
             MqttMessage message = new MqttMessage();
             message.setPayload(publishMessage.getBytes());
@@ -195,8 +240,15 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onResume() {
-        Connect2MQTT();
         super.onResume();
+        Connect2MQTT();
+    }
+
+    public class NetworkReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Connect2MQTT();
+        }
     }
 
 }

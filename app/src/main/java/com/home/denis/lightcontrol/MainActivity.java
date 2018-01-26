@@ -5,6 +5,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.preference.PreferenceManager;
@@ -12,6 +15,8 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
 
 import org.eclipse.paho.android.service.MqttAndroidClient;
@@ -26,7 +31,7 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
     SharedPreferences sharedPreferences;
     TextView tvStatus;
@@ -40,6 +45,24 @@ public class MainActivity extends AppCompatActivity {
     final String publishMessage = "Hello World!";
     final String subscriptionTopic = "wemos/test";
 
+    private String GetNameById(int id){
+        return getResources().getResourceEntryName(id);
+    }
+
+    private void InitColorButton(int id, String default_color_str) {
+        Button btn = (Button) findViewById(id);
+        String res_name = GetNameById(id);
+        String color_str = sharedPreferences.getString(res_name, "");
+        if (color_str=="")
+        {
+            color_str = default_color_str;
+            sharedPreferences.edit().putString(res_name, default_color_str).commit();
+        }
+        btn.getBackground().mutate().setColorFilter(new PorterDuffColorFilter(Color.parseColor(color_str), PorterDuff.Mode.SRC));
+        btn.setOnClickListener(this);
+    }
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -50,7 +73,7 @@ public class MainActivity extends AppCompatActivity {
         // получаем SharedPreferences, которое работает с файлом настроек
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         // полная очистка настроек
-        // sp.edit().clear().commit();
+        //sharedPreferences.edit().clear().commit();
 
         mqttConnectOptions = new MqttConnectOptions();
         mqttConnectOptions.setAutomaticReconnect(false);
@@ -58,6 +81,13 @@ public class MainActivity extends AppCompatActivity {
         mqttConnectOptions.setCleanSession(false);
         mqttConnectOptions.setConnectionTimeout(300);
         mqttConnectOptions.setKeepAliveInterval(10 * 60);
+
+        InitColorButton(R.id.btnBlack, "#000000");
+        InitColorButton(R.id.btnWhite, "#FFFFFF");
+        InitColorButton(R.id.btnColor1, "#FF0000");
+        InitColorButton(R.id.btnColor2, "#00FF00");
+        InitColorButton(R.id.btnColor3, "#0000FF");
+        InitColorButton(R.id.btnColor4, "#FF00FF");
 
         // Registers BroadcastReceiver to track network connection changes.
         IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
@@ -179,36 +209,25 @@ public class MainActivity extends AppCompatActivity {
                     addToHistory("Failed to subscribe");
                 }
             });
-            /*
-            // THIS DOES NOT WORK!
-            mqttAndroidClient.subscribe(subscriptionTopic, 0, new IMqttMessageListener() {
-                @Override
-                public void messageArrived(String topic, MqttMessage message) throws Exception {
-                    // message Arrived!
-                    addToHistory("Message: " + topic + " : " + new String(message.getPayload()));
-                }
-            });
-            */
-
         } catch (MqttException ex){
             System.err.println("Exception whilst subscribing");
             ex.printStackTrace();
         }
     }
 
-    public void publishMessage(){
+    public void publishMessage(String topic, String msg){
         if (mqttAndroidClient == null)
             return;
         if (!mqttAndroidClient.isConnected())
             return;
         try {
             MqttMessage message = new MqttMessage();
-            message.setPayload(publishMessage.getBytes());
-            mqttAndroidClient.publish(publishTopic, message);
-            addToHistory("Message Published");
-            if(!mqttAndroidClient.isConnected()){
-                addToHistory(mqttAndroidClient.getBufferedMessageCount() + " messages in buffer.");
-            }
+            message.setPayload(msg.getBytes());
+            mqttAndroidClient.publish(topic, message);
+            //addToHistory("Message Published");
+            //if(!mqttAndroidClient.isConnected()){
+            //    addToHistory(mqttAndroidClient.getBufferedMessageCount() + " messages in buffer.");
+            //}
         } catch (MqttException e) {
             addToHistory("Error Publishing: " + e.getMessage());
             e.printStackTrace();
@@ -232,7 +251,7 @@ public class MainActivity extends AppCompatActivity {
                 finish();
                 break;
             case R.id.menu_publish:
-                publishMessage();
+                publishMessage(publishTopic, publishMessage);
                 break;
         }
         return super.onContextItemSelected(item);
@@ -242,6 +261,31 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         Connect2MQTT();
+    }
+
+    @Override
+    public void onClick(View view) {
+        int id =  view.getId();
+        switch (id) {
+            case R.id.btnBlack:
+            case R.id.btnWhite:
+            case R.id.btnColor1:
+            case R.id.btnColor2:
+            case R.id.btnColor3:
+            case R.id.btnColor4:
+                String res_name = GetNameById(id);
+                String color_str = sharedPreferences.getString(res_name, "#000000");
+                int color = Color.parseColor(color_str);
+                UpdateLEDStripeColor(color);
+                break;
+        }
+    }
+
+    private void UpdateLEDStripeColor(int color) {
+        int red = Color.red(color);
+        int green = Color.green(color);
+        int blue = Color.blue(color);
+        publishMessage("wemos/rgb_color",  Integer.toString(red) + ";" + Integer.toString(green) + ";" + Integer.toString(blue));
     }
 
     public class NetworkReceiver extends BroadcastReceiver {

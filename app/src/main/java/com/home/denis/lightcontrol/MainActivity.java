@@ -2,6 +2,7 @@ package com.home.denis.lightcontrol;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -19,6 +20,11 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
+import com.flask.colorpicker.ColorPickerView;
+import com.flask.colorpicker.OnColorSelectedListener;
+import com.flask.colorpicker.builder.ColorPickerClickListener;
+import com.flask.colorpicker.builder.ColorPickerDialogBuilder;
+
 import org.eclipse.paho.android.service.MqttAndroidClient;
 import org.eclipse.paho.client.mqttv3.DisconnectedBufferOptions;
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
@@ -31,7 +37,7 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
-public class MainActivity extends AppCompatActivity implements View.OnClickListener {
+public class MainActivity extends AppCompatActivity implements View.OnClickListener,View.OnLongClickListener {
 
     SharedPreferences sharedPreferences;
     TextView tvStatus;
@@ -44,6 +50,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     final String publishTopic = "wemos/toggle";
     final String publishMessage = "Hello World!";
     final String subscriptionTopic = "wemos/test";
+
+    private int colorpicker_btn_saved_id;
+    private int colorpicker_btn_saved_color;
 
     private String GetNameById(int id){
         return getResources().getResourceEntryName(id);
@@ -60,6 +69,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         btn.getBackground().mutate().setColorFilter(new PorterDuffColorFilter(Color.parseColor(color_str), PorterDuff.Mode.SRC));
         btn.setOnClickListener(this);
+        btn.setOnLongClickListener(this);
     }
 
 
@@ -286,6 +296,70 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         int green = Color.green(color);
         int blue = Color.blue(color);
         publishMessage("wemos/rgb_color",  Integer.toString(red) + ";" + Integer.toString(green) + ";" + Integer.toString(blue));
+    }
+
+    private void ColorPickerDialogOk(int color){
+        Button btn = (Button) findViewById(colorpicker_btn_saved_id);
+        btn.getBackground().mutate().setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC));
+        String res_name = GetNameById(colorpicker_btn_saved_id);
+        String color_str = String.format("#%X", color);
+        sharedPreferences.edit().putString(res_name, color_str).commit();
+        UpdateLEDStripeColor(color);
+    }
+
+    private void ColorPickerDialogCancel(){
+        UpdateLEDStripeColor(colorpicker_btn_saved_color);
+    }
+
+    private void ColorPickerDialog(int id, int color)
+    {
+        colorpicker_btn_saved_id = id;
+        colorpicker_btn_saved_color = color;
+
+        ColorPickerDialogBuilder
+                .with(this)
+                .setTitle("Выбор цвета")
+                .initialColor(color)
+                .lightnessSliderOnly()
+                .wheelType(ColorPickerView.WHEEL_TYPE.FLOWER)
+                .density(10)
+                .setOnColorSelectedListener(new OnColorSelectedListener() {
+                    @Override
+                    public void onColorSelected(int selectedColor) {
+                        UpdateLEDStripeColor(selectedColor);
+                    }
+                })
+                .setPositiveButton("Применить", new ColorPickerClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int selectedColor, Integer[] allColors) {
+                        ColorPickerDialogOk(selectedColor);
+                    }
+                })
+                .setNegativeButton("Отмена", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        ColorPickerDialogCancel();
+                    }
+                })
+                .build()
+                .show();
+    }
+
+    @Override
+    public boolean onLongClick(View v) {
+        int id =  v.getId();
+        switch (id) {
+            case R.id.btnColor1:
+            case R.id.btnColor2:
+            case R.id.btnColor3:
+            case R.id.btnColor4:
+                String res_name = GetNameById(id);
+                String color_str = sharedPreferences.getString(res_name, "#000000");
+                int color = Color.parseColor(color_str);
+                ColorPickerDialog(id, color);
+                return true;
+        }
+        return false;
     }
 
     public class NetworkReceiver extends BroadcastReceiver {

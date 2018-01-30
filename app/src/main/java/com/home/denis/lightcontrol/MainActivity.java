@@ -72,6 +72,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         btn.setOnLongClickListener(this);
     }
 
+    private void InitConstColorButton(int id, String default_color_str) {
+        Button btn = (Button) findViewById(id);
+        btn.getBackground().mutate().setColorFilter(new PorterDuffColorFilter(Color.parseColor(default_color_str), PorterDuff.Mode.SRC));
+        btn.setOnClickListener(this);
+        btn.setOnLongClickListener(this);
+    }
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -92,8 +99,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mqttConnectOptions.setConnectionTimeout(300);
         mqttConnectOptions.setKeepAliveInterval(10 * 60);
 
-        InitColorButton(R.id.btnBlack, "#000000");
-        InitColorButton(R.id.btnWhite, "#FFFFFF");
+        InitConstColorButton(R.id.btnBlack, "#000000");
+        InitConstColorButton(R.id.btnWhite, "#FFFFFF");
         InitColorButton(R.id.btnColor1, "#FF0000");
         InitColorButton(R.id.btnColor2, "#00FF00");
         InitColorButton(R.id.btnColor3, "#0000FF");
@@ -275,17 +282,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     @Override
     public void onClick(View view) {
+        int color;
         int id =  view.getId();
         switch (id) {
             case R.id.btnBlack:
+                color = Color.parseColor("#000000");
+                UpdateLEDStripeColor(color);
+                break;
             case R.id.btnWhite:
+                color = Color.parseColor("#FFE1CD");
+                UpdateLEDStripeColor(color);
+                break;
             case R.id.btnColor1:
             case R.id.btnColor2:
             case R.id.btnColor3:
             case R.id.btnColor4:
                 String res_name = GetNameById(id);
                 String color_str = sharedPreferences.getString(res_name, "#000000");
-                int color = Color.parseColor(color_str);
+                color = Color.parseColor(color_str);
                 UpdateLEDStripeColor(color);
                 break;
         }

@@ -290,7 +290,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 UpdateLEDStripeColor(color);
                 break;
             case R.id.btnWhite:
-                color = Color.parseColor("#FFE1CD");
+                color = Color.parseColor("#FFB496");
                 UpdateLEDStripeColor(color);
                 break;
             case R.id.btnColor1:
